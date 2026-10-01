@@ -46,7 +46,7 @@ def get_sheet():
 def main_keyboard():
     return ReplyKeyboardMarkup(
         [
-            ["➖ Расход"],
+            ["➕ Доход", "➖ Расход"],
             ["📊 Итоги", "📂 Категории"],
         ],
         resize_keyboard=True,
@@ -92,11 +92,21 @@ async def expense_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def income_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_data[update.effective_user.id] = {"action": "income"}
+
+    await update.message.reply_text(
+        "💰 Введи сумму дохода:"
+    )
+
+
 async def totals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         sheet = get_sheet()
         records = sheet.get_all_records()
         current_month = datetime.now().strftime("%m.%Y")
+
+        total_income = 0
         total_expense = 0
 
         for row in records:
@@ -104,13 +114,22 @@ async def totals(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             if date_value.endswith(current_month):
                 try:
+                    total_income += float(row.get("Доход", 0) or 0)
+                except (ValueError, TypeError):
+                    pass
+
+                try:
                     total_expense += float(row.get("Расход", 0) or 0)
                 except (ValueError, TypeError):
                     pass
 
+        balance = total_income - total_expense
+
         await update.message.reply_text(
             f"📊 Итоги за {current_month}\n\n"
-            f"Расходы: {total_expense:.2f}"
+            f"Доходы: {total_income:.2f}\n"
+            f"Расходы: {total_expense:.2f}\n"
+            f"Баланс: {balance:.2f}"
         )
 
     except Exception as e:
@@ -123,6 +142,10 @@ async def totals(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
+
+    if text == "➕ Доход":
+        await income_start(update, context)
+        return
 
     if text == "➖ Расход":
         await expense_start(update, context)
@@ -149,6 +172,58 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not data:
         return
 
+    # ДОХОД
+    if data.get("action") == "income" and "amount" not in data:
+        try:
+            amount = float(text.replace(",", "."))
+            data["amount"] = amount
+
+            await update.message.reply_text(
+                "📝 Напиши описание дохода.\n\n"
+                "Если описание не нужно — напиши: -"
+            )
+
+        except ValueError:
+            await update.message.reply_text(
+                "Введите сумму числом, например: 500"
+            )
+
+        return
+
+    if data.get("action") == "income" and "amount" in data:
+        description = "" if text == "-" else text
+
+        try:
+            sheet = get_sheet()
+            today = datetime.now().strftime("%d.%m.%Y")
+
+            sheet.append_row(
+                [
+                    today,
+                    "💰 Доход",
+                    description,
+                    data["amount"],
+                    "",
+                ]
+            )
+
+            await update.message.reply_text(
+                "✅ Доход записан в таблицу!",
+                reply_markup=main_keyboard(),
+            )
+
+            user_data.pop(user_id, None)
+
+        except Exception as e:
+            print(f"Ошибка записи дохода: {e}")
+
+            await update.message.reply_text(
+                "😔 Не удалось записать доход в таблицу."
+            )
+
+        return
+
+    # РАСХОД — выбор категории
     if data.get("action") == "expense" and "category" not in data:
         if text not in CATEGORIES:
             await update.message.reply_text(
@@ -163,6 +238,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # РАСХОД — сумма
     if data.get("action") == "expense" and "amount" not in data:
         try:
             amount = float(text.replace(",", "."))
@@ -180,6 +256,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
+    # РАСХОД — запись
     if data.get("action") == "expense" and "amount" in data:
         description = "" if text == "-" else text
 
