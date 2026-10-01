@@ -104,14 +104,20 @@ async def totals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         sheet = get_sheet()
         records = sheet.get_all_records()
+
         current_month = datetime.now().strftime("%m.%Y")
 
         total_income = 0
         total_expense = 0
 
         for row in records:
-            date_value = str(row.get("Дата", ""))
+            # В твоей таблице дата находится в столбце I
+            date_value = str(row.get("I", ""))
 
+            if not date_value:
+                continue
+
+            # Проверяем текущий месяц
             if date_value.endswith(current_month):
                 try:
                     total_income += float(row.get("Доход", 0) or 0)
@@ -134,6 +140,7 @@ async def totals(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Ошибка итогов: {e}")
+
         await update.message.reply_text(
             "😔 Не удалось получить данные из таблицы."
         )
@@ -161,6 +168,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "↩️ Отмена":
         user_data.pop(user_id, None)
+
         await update.message.reply_text(
             "Отменено.",
             reply_markup=main_keyboard(),
@@ -172,7 +180,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not data:
         return
 
+    # =========================
     # ДОХОД
+    # =========================
+
     if data.get("action") == "income" and "amount" not in data:
         try:
             amount = float(text.replace(",", "."))
@@ -223,7 +234,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    # РАСХОД — выбор категории
+    # =========================
+    # РАСХОД — КАТЕГОРИЯ
+    # =========================
+
     if data.get("action") == "expense" and "category" not in data:
         if text not in CATEGORIES:
             await update.message.reply_text(
@@ -236,9 +250,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "💰 Теперь введи сумму:"
         )
+
         return
 
-    # РАСХОД — сумма
+    # =========================
+    # РАСХОД — СУММА
+    # =========================
+
     if data.get("action") == "expense" and "amount" not in data:
         try:
             amount = float(text.replace(",", "."))
@@ -256,7 +274,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    # РАСХОД — запись
+    # =========================
+    # РАСХОД — ЗАПИСЬ
+    # =========================
+
     if data.get("action") == "expense" and "amount" in data:
         description = "" if text == "-" else text
 
@@ -299,8 +320,12 @@ def main():
     app = Application.builder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
+
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            handle_message
+        )
     )
 
     print("Второй бот запущен!")
