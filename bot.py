@@ -84,7 +84,9 @@ async def categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def expense_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data[update.effective_user.id] = {"action": "expense"}
+    user_data[update.effective_user.id] = {
+        "action": "expense"
+    }
 
     await update.message.reply_text(
         "📂 Выбери категорию:",
@@ -93,7 +95,9 @@ async def expense_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def income_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data[update.effective_user.id] = {"action": "income"}
+    user_data[update.effective_user.id] = {
+        "action": "income"
+    }
 
     await update.message.reply_text(
         "💰 Введи сумму дохода:"
@@ -103,31 +107,54 @@ async def income_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def totals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         sheet = get_sheet()
-        records = sheet.get_all_records()
+
+        # Читаем таблицу без использования заголовков.
+        # Это позволяет работать даже если в первой строке
+        # есть пустые ячейки.
+        rows = sheet.get_all_values()
 
         current_month = datetime.now().strftime("%m.%Y")
 
         total_income = 0
         total_expense = 0
 
-        for row in records:
-            # В твоей таблице дата находится в столбце I
-            date_value = str(row.get("I", ""))
+        # Пропускаем первую строку с заголовками.
+        for row in rows[1:]:
 
-            if not date_value:
+            # Нужно минимум 5 колонок:
+            # A = дата
+            # B = категория
+            # C = описание
+            # D = доход
+            # E = расход
+            if len(row) < 5:
                 continue
 
-            # Проверяем текущий месяц
-            if date_value.endswith(current_month):
-                try:
-                    total_income += float(row.get("Доход", 0) or 0)
-                except (ValueError, TypeError):
-                    pass
+            # A — дата
+            date_value = str(row[0]).strip()
 
-                try:
-                    total_expense += float(row.get("Расход", 0) or 0)
-                except (ValueError, TypeError):
-                    pass
+            if not date_value.endswith(current_month):
+                continue
+
+            # D — доход
+            try:
+                income_value = str(row[3]).replace(",", ".").strip()
+
+                if income_value:
+                    total_income += float(income_value)
+
+            except ValueError:
+                pass
+
+            # E — расход
+            try:
+                expense_value = str(row[4]).replace(",", ".").strip()
+
+                if expense_value:
+                    total_expense += float(expense_value)
+
+            except ValueError:
+                pass
 
         balance = total_income - total_expense
 
@@ -149,6 +176,10 @@ async def totals(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
+
+    # =========================
+    # КНОПКИ
+    # =========================
 
     if text == "➕ Доход":
         await income_start(update, context)
@@ -173,6 +204,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Отменено.",
             reply_markup=main_keyboard(),
         )
+
         return
 
     data = user_data.get(user_id)
@@ -181,12 +213,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # =========================
-    # ДОХОД
+    # ДОХОД — СУММА
     # =========================
 
     if data.get("action") == "income" and "amount" not in data:
+
         try:
-            amount = float(text.replace(",", "."))
+            amount = float(
+                text.replace(",", ".")
+            )
+
             data["amount"] = amount
 
             await update.message.reply_text(
@@ -195,18 +231,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         except ValueError:
+
             await update.message.reply_text(
                 "Введите сумму числом, например: 500"
             )
 
         return
 
+    # =========================
+    # ДОХОД — ЗАПИСЬ
+    # =========================
+
     if data.get("action") == "income" and "amount" in data:
+
         description = "" if text == "-" else text
 
         try:
             sheet = get_sheet()
-            today = datetime.now().strftime("%d.%m.%Y")
+
+            today = datetime.now().strftime(
+                "%d.%m.%Y"
+            )
 
             sheet.append_row(
                 [
@@ -226,7 +271,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data.pop(user_id, None)
 
         except Exception as e:
-            print(f"Ошибка записи дохода: {e}")
+
+            print(
+                f"Ошибка записи дохода: {e}"
+            )
 
             await update.message.reply_text(
                 "😔 Не удалось записать доход в таблицу."
@@ -238,11 +286,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # РАСХОД — КАТЕГОРИЯ
     # =========================
 
-    if data.get("action") == "expense" and "category" not in data:
+    if (
+        data.get("action") == "expense"
+        and "category" not in data
+    ):
+
         if text not in CATEGORIES:
+
             await update.message.reply_text(
                 "Пожалуйста, выбери категорию кнопкой."
             )
+
             return
 
         data["category"] = text
@@ -257,9 +311,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # РАСХОД — СУММА
     # =========================
 
-    if data.get("action") == "expense" and "amount" not in data:
+    if (
+        data.get("action") == "expense"
+        and "amount" not in data
+    ):
+
         try:
-            amount = float(text.replace(",", "."))
+            amount = float(
+                text.replace(",", ".")
+            )
+
             data["amount"] = amount
 
             await update.message.reply_text(
@@ -268,6 +329,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         except ValueError:
+
             await update.message.reply_text(
                 "Введите сумму числом, например: 500"
             )
@@ -278,12 +340,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # РАСХОД — ЗАПИСЬ
     # =========================
 
-    if data.get("action") == "expense" and "amount" in data:
+    if (
+        data.get("action") == "expense"
+        and "amount" in data
+    ):
+
         description = "" if text == "-" else text
 
         try:
             sheet = get_sheet()
-            today = datetime.now().strftime("%d.%m.%Y")
+
+            today = datetime.now().strftime(
+                "%d.%m.%Y"
+            )
 
             sheet.append_row(
                 [
@@ -303,7 +372,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data.pop(user_id, None)
 
         except Exception as e:
-            print(f"Ошибка записи: {e}")
+
+            print(
+                f"Ошибка записи: {e}"
+            )
 
             await update.message.reply_text(
                 "😔 Не удалось записать данные в таблицу."
@@ -311,15 +383,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
+
+    token = os.getenv(
+        "TELEGRAM_BOT_TOKEN"
+    )
 
     if not token:
-        print("Токен Telegram не найден!")
+
+        print(
+            "Токен Telegram не найден!"
+        )
+
         return
 
-    app = Application.builder().token(token).build()
+    app = (
+        Application
+        .builder()
+        .token(token)
+        .build()
+    )
 
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(
+        CommandHandler(
+            "start",
+            start
+        )
+    )
 
     app.add_handler(
         MessageHandler(
@@ -328,7 +417,9 @@ def main():
         )
     )
 
-    print("Второй бот запущен!")
+    print(
+        "Второй бот запущен!"
+    )
 
     app.run_polling()
 
